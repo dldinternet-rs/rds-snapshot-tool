@@ -32,15 +32,35 @@
 			"Default": "{ \".*\": null }",
 			"Description": "JSON string with a map (dict) for mapping snapshots to db instances. This is used to determine which db instances are the restores of matching snapshots."
 		},
+		"RestoreInterval": {
+			"Type": "String",
+			"Default": "24",
+			"Description": "Restore interval in hours. 1 min and default 24"
+		},
+		"RunSchedule": {
+			"Type": "String",
+			"Default": "*/30 * * * ? *",
+			"Description": "Run schedule in Cloudwatch Event cron format. Needs to run at least once for every RestoreInterval. The default value runs once every 30 minutes. More information: http://docs.aws.amazon.com/AmazonCloudWatch/latest/events/ScheduledEvents.html"
+		},
 		"RestoreArgs": {
 			"Type": "String",
 			"Default": "{\"DBInstanceClass\": \"db.t3.medium\",\"MultiAZ\":false,\"PubliclyAccessible\":false,\"AutoMinorVersionUpgrade\":true}",
 			"Description": "JSON string with arguments for new db instance creation. See https://boto3.amazonaws.com/v1/documentation/api/1.16.51/reference/services/rds.html#RDS.Client.restore_db_instance_from_db_snapshot and https://docs.aws.amazon.com/goto/WebAPI/rds-2014-10-31/RestoreDBInstanceFromDBSnapshot."
 		},
+		"LoadBalancer": {
+			"Type": "String",
+			"Default": "",
+			"Description": "Name or ARN of the network ilb or elb to point to new restored db instance (DB instance is a Target in target group of this LB)."
+		},
 		"LogLevel": {
 			"Type": "String",
 			"Default": "WARNING",
 			"Description": "Log level for Lambda functions (DEBUG, INFO, WARN, ERROR, CRITICAL are valid values)."
+		},
+		"MaxWait": {
+			"Type": "Number",
+			"Default": 300,
+			"Description": "Max wait/run time for lambda and restore to become available"
 		},
 		"LambdaCWLogRetention": {
 			"Type": "Number",
@@ -295,8 +315,17 @@
 						"RESTORE_ARGS": {
 							"Ref": "RestoreArgs"
 						},
+						"RESTORE_INTERVAL": {
+							"Ref": "RestoreInterval"
+						},
+						"LOAD_BALANCER": {
+							"Ref": "LoadBalancer"
+						},
 						"LOG_LEVEL": {
 							"Ref": "LogLevel"
+						},
+						"MAX_WAIT": {
+							"Ref": "MaxWait"
 						}
 					}
 				},
@@ -306,7 +335,9 @@
 				},
 				"Runtime": "python3.7",
 				"Handler": "lambda_function.lambda_handler",
-				"Timeout": 300
+				"Timeout": {
+					"Ref": "MaxWait"
+				}
 			}
 		},
 		"iamroleStateExecution": {
@@ -424,7 +455,9 @@
 			"Properties": {
 				"Description": "Triggers the RDS Copy state machine in the destination account",
 				"ScheduleExpression": {
-					"Fn::Join": ["", ["cron(", "/30 * * * ? *", ")"]]
+					"Fn::Join": ["", ["cron(", {
+						"Ref": "RunSchedule"
+					}, ")"]]
 				},
 				"State": "ENABLED",
 				"Targets": [{
