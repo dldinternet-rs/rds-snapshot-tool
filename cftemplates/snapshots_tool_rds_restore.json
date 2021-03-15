@@ -243,6 +243,39 @@
 
 					},
 					{
+						"PolicyName": "inline_policy_loadbalancer_elb",
+						"PolicyDocument": {
+							"Version": "2012-10-17",
+							"Statement": [
+								{
+									"Sid": "TargetGroups",
+									"Effect": "Allow",
+									"Action": [
+										"elasticloadbalancing:DescribeTags",
+										"elasticloadbalancing:RegisterTargets",
+										"elasticloadbalancing:DeregisterTargets",
+										"elasticloadbalancing:ModifyTargetGroupAttributes",
+										"elasticloadbalancing:ModifyTargetGroup"
+									],
+									"Resource": { "Fn::Sub":  [ "arn:aws:elasticloadbalancing:*:${AccountId}:targetgroup/*/*", { "AccountId":  { "Ref":  "AWS::AccountId"}} ] }
+								},
+								{
+									"Sid": "ELBV2",
+									"Effect": "Allow",
+									"Action": [
+										"elasticloadbalancing:DescribeLoadBalancerAttributes",
+										"elasticloadbalancing:DescribeLoadBalancers",
+										"elasticloadbalancing:DescribeTargetGroupAttributes",
+										"elasticloadbalancing:DescribeListeners",
+										"elasticloadbalancing:DescribeTargetHealth",
+										"elasticloadbalancing:DescribeTargetGroups"
+									],
+									"Resource": "*"
+								}
+							]
+						}
+					},
+					{
 						"PolicyName": "inline_policy_snapshot_rds_kms_access",
 						"PolicyDocument": {
 							"Version": "2012-10-17",
