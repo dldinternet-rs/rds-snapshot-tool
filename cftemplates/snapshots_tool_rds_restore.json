@@ -222,15 +222,20 @@
 							"Statement": [{
 								"Effect": "Allow",
 								"Action": [
-									"rds:CreateDBSnapshot",
-									"rds:DeleteDBSnapshot",
-									"rds:DescribeDBInstances",
+									"rds:AddTagsToResource",
 									"rds:DescribeDBSnapshots",
-									"rds:ModifyDBSnapshotAttribute",
+									"rds:RestoreDBInstanceFromS3",
+									"rds:StopDBInstance",
 									"rds:DescribeDBSnapshotAttributes",
-									"rds:CopyDBSnapshot",
+									"rds:StartDBInstance",
 									"rds:ListTagsForResource",
-									"rds:AddTagsToResource"
+									"rds:CreateDBSnapshot",
+									"rds:RestoreDBInstanceFromDBSnapshot",
+									"rds:CreateDBInstance",
+									"rds:DescribeDBInstances",
+									"rds:ModifyDBInstance",
+									"rds:RestoreDBInstanceToPointInTime",
+									"rds:DeleteDBInstance"
 								],
 								"Resource": "*"
 							}]
