@@ -144,7 +144,11 @@ def lambda_handler(event, context):
                                     freshness_window -= timedelta(hours=RESTORE_INTERVAL)
                                 if RESTORE_INTERVAL and inst_create_time > freshness_window:
                                     fresh_inst = inst
-                                    db_inst = inst if not db_inst else db_inst
+                                    logger.info(f"Fresh instance found: {fresh_inst['DBInstanceIdentifier']} as of {inst_create_time}")
+                                    if not db_inst:
+                                        logger.warning(f"Using fresh instance {fresh_inst['DBInstanceIdentifier']} as the match for {db_identifier}")
+                                        db_inst = inst
+
                             if not fresh_inst:
                                 # 2. Restore the snapshot to a new DB with a snapshot derived name (or specified?)
                                 try:
