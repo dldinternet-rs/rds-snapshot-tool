@@ -1,6 +1,5 @@
 #!bash
 
 cd $(dirname "$0")
-python -V
-inv check-db-password
-inv create-views --host power-bi.db.dev.roadsync.com --sql views.sql --no-show-views
+inv check-db-password 2>&1 | tee -a /tmp/create-views.log
+inv create-views --host power-bi.db.dev.roadsync.com --sql views.sql --show-views 2>&1 | tee -a /tmp/create-views.log
