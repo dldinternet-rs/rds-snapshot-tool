@@ -1,5 +1,5 @@
 '''
-Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2021 Roadsync, Inc. or its affiliates. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
 
@@ -8,9 +8,8 @@ Licensed under the Apache License, Version 2.0 (the "License"). You may not use 
 or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 '''
 
-# share_snapshots_rds
-# This Lambda function shares snapshots created by aurora_take_snapshot with the account set in the environment variable DEST_ACCOUNT
-# It will only share snapshots tagged with shareAndCopy and a value of YES
+# restore_snapshots_rds
+# This Lambda function restores snapshots within the account. These snapshots can be created, or shared and copied by other stacks in the rds-snapshot-tool family possibly in other accounts.
 import json
 from botocore.exceptions import ClientError
 from botocore.utils import ArnParser, InvalidArnException
