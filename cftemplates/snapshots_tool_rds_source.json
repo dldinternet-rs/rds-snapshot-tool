@@ -257,7 +257,7 @@
 				}]
 			}
 		},
-		"iamroleSnapshotsRDS": {
+		"iamroleRestoreSnapshotsRDS": {
 			"Type": "AWS::IAM::Role",
 			"Properties": {
 				"AssumeRolePolicyDocument": {

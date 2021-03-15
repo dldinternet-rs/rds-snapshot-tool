@@ -30,7 +30,7 @@ RESTORE_INTERVAL = int(os.getenv('INTERVAL', '24'))
 SNAPSHOT_PATTERN = os.getenv('SNAPSHOT_PATTERN', 'ALL_INSTANCES')
 DB_PATTERN = os.getenv('DB_PATTERN', 'NO_INSTANCES')
 TAGGEDINSTANCE = os.getenv('TAGGEDINSTANCE', 'FALSE')
-MAX_WAIT = int(os.getenv('MAX_WAIT', 300))
+MAX_WAIT = int(os.getenv('MAX_WAIT', 300)) - 1
 LOAD_BALANCER = os.getenv('LOAD_BALANCER', None)
 SNAPSHOT_DB_MAP = os.getenv('SNAPSHOT_DB_MAP', '{ ".*": null }')
 try:

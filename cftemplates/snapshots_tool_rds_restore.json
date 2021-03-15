@@ -11,18 +11,35 @@
 			"Default": "ALL_SNAPSHOTS",
 			"Description": "Python regex for matching instance names to backup. Use \"ALL_SNAPSHOTS\" to back up every RDS instance in the region."
 		},
-		"RetentionDays": {
-			"Type": "Number",
-			"Default": "7",
-			"Description": "Number of days to keep snapshots in retention before deleting them"
-		},
-		"DestinationRegion": {
+		"SnapshotType": {
 			"Type": "String",
-			"Description": "Destination region for snapshots."
+			"Default": "manual",
+			"Description": "Type of snapshots to restore",
+			"AllowedValues": ["manual", "shared", "automatic"]
+		},
+		"SourceRegionOverride": {
+			"Type": "String",
+			"Default": "NO",
+			"Description": "Set to the region where your RDS instances run, only if such region does not support Step Functions. Leave as NO otherwise"
+		},
+		"DatabasePattern": {
+			"Type": "String",
+			"Default": "^app-prod-",
+			"Description": "Python regex for matching instance names to manage (Restore, target and delete)."
+		},
+		"SnapshotDbMap": {
+			"Type": "String",
+			"Default": "{ \".*\": null }",
+			"Description": "JSON string with a map (dict) for mapping snapshots to db instances. This is used to determine which db instances are the restores of matching snapshots."
+		},
+		"RestoreArgs": {
+			"Type": "String",
+			"Default": "{\"DBInstanceClass\": \"db.t3.medium\",\"MultiAZ\":false,\"PubliclyAccessible\":false,\"AutoMinorVersionUpgrade\":true}",
+			"Description": "JSON string with arguments for new db instance creation. See https://boto3.amazonaws.com/v1/documentation/api/1.16.51/reference/services/rds.html#RDS.Client.restore_db_instance_from_db_snapshot and https://docs.aws.amazon.com/goto/WebAPI/rds-2014-10-31/RestoreDBInstanceFromDBSnapshot."
 		},
 		"LogLevel": {
 			"Type": "String",
-			"Default": "ERROR",
+			"Default": "WARNING",
 			"Description": "Log level for Lambda functions (DEBUG, INFO, WARN, ERROR, CRITICAL are valid values)."
 		},
 		"LambdaCWLogRetention": {
@@ -30,36 +47,9 @@
 			"Default": "7",
 			"Description": "Number of days to retain logs from the lambda functions in CloudWatch Logs"
 		},
-		"SourceRegionOverride": {
-			"Type": "String",
-			"Default": "NO",
-			"Description": "Set to the region where your RDS instances run, only if such region does not support Step Functions. Leave as NO otherwise"
-		},
-		"KmsKeyDestination": {
-			"Type": "String",
-			"Default": "None",
-			"Description": "Set to the ARN for the KMS key in the destination region to re-encrypt encrypted snapshots. Leave None if you are not using encryption"
-		},
-		"KmsKeySource": {
-			"Type": "String",
-			"Default": "None",
-			"Description": "Set to the ARN for the KMS key in the SOURCE region to re-encrypt encrypted snapshots. Leave None if you are not using encryption"
-		},
-		"DeleteOldSnapshots": {
-			"Type": "String",
-			"Default": "TRUE",
-			"Description": "Set to TRUE to enable deletion of snapshot based on RetentionDays. Set to FALSE to disable",
-			"AllowedValues": ["TRUE", "FALSE"]
-		},
-		"CrossAccountCopy": {
-			"Type": "String",
-			"AllowedValues": ["TRUE", "FALSE"],
-			"Default": "TRUE",
-			"Description": "Enable copying snapshots across accounts. Set to FALSE if your source snapshosts are not on a different account"
-		},
 		"LogGroupName": {
 			"Type": "String",
-			"Default": "lambdaDeleteOldSnapshotsRDS-dest",
+			"Default": "lambdaRestoreSnapshotsRDS-dest",
 			"Description": "Name for RDS snapshot log group."
 		}
 	},
@@ -68,55 +58,45 @@
 			"Fn::Equals": [{
 				"Ref": "CodeBucket"
 			}, "DEFAULT_BUCKET"]
-		},
-		"DeleteOld": {
-			"Fn::Equals": [{
-				"Ref": "DeleteOldSnapshots"
-			}, "TRUE"]
-		},
-		"CrossAccount": {
-			"Fn::Equals": [{
-				"Ref": "CrossAccountCopy"
-			}, "TRUE" ]
 		}
 	},
 	"Mappings": {
 		"Buckets": {
 			"us-east-1": {
-				"Bucket": "snapshots-tool-rds-us-east-1"
+				"Bucket": "roadsync-rds-snapshot-tool-us-east-1"
 			},
 			"us-west-2": {
-				"Bucket": "snapshots-tool-rds-us-west-2"
+				"Bucket": "roadsync-rds-snapshot-tool-us-west-2"
 			},
 			"us-east-2": {
-				"Bucket": "snapshots-tool-rds-us-east-2"
+				"Bucket": "roadsync-rds-snapshot-tool-us-east-2"
 			},
 			"ap-southeast-2": {
-				"Bucket": "snapshots-tool-rds-ap-southeast-2"
+				"Bucket": "roadsync-rds-snapshot-tool-ap-southeast-2"
 			},
 			"ap-northeast-1": {
-				"Bucket": "snapshots-tool-rds-ap-northeast-1"
+				"Bucket": "roadsync-rds-snapshot-tool-ap-northeast-1"
 			},
 			"eu-west-1": {
-				"Bucket": "snapshots-tool-rds-eu-west-1"
+				"Bucket": "roadsync-rds-snapshot-tool-eu-west-1"
 			},
 			"eu-central-1": {
-				"Bucket": "snapshots-tool-rds-eu-central-1"
+				"Bucket": "roadsync-rds-snapshot-tool-eu-central-1"
 			},
 			"ca-central-1": {
-				"Bucket": "snapshots-tool-rds-ca-central-1"
+				"Bucket": "roadsync-rds-snapshot-tool-ca-central-1"
 			},
 			"eu-west-2": {
-				"Bucket": "snapshots-tool-rds-eu-west-2"
+				"Bucket": "roadsync-rds-snapshot-tool-eu-west-2"
 			},
 			"us-west-1": {
-				"Bucket": "snapshots-tool-rds-us-west-1"
+				"Bucket": "roadsync-rds-snapshot-tool-us-west-1"
 			},
 			"ap-northeast-2": {
-				"Bucket": "snapshots-tool-rds-ap-northeast-2"
+				"Bucket": "roadsync-rds-snapshot-tool-ap-northeast-2"
 			},
 			"ap-southeast-1": {
-				"Bucket": "snapshots-tool-rds-ap-southeast-1-real"
+				"Bucket": "roadsync-rds-snapshot-tool-ap-southeast-1-real"
 			}
 		}
 	},
@@ -127,19 +107,11 @@
 				"DisplayName": "copies_failed_dest_rds"
 			}
 		},
-		"topicDeleteOldFailedDest": {
-			"Type": "AWS::SNS::Topic",
-			"Properties": {
-				"DisplayName": "delete_old_failed_dest_rds"
-			}
-		},
 		"snspolicyRestoreFailed": {
 			"Type": "AWS::SNS::TopicPolicy",
 			"Properties": {
 				"Topics": [{
-					"Ref": "topicCopyFailedDest"
-				}, {
-					"Ref": "topicDeleteOldFailedDest"
+					"Ref": "topicRestoreFailed"
 				}],
 				"PolicyDocument": {
 					"Version": "2008-10-17",
@@ -185,35 +157,12 @@
 				"Statistic": "Sum",
 				"Threshold": "1.0",
 				"AlarmActions": [{
-					"Ref": "topicCopyFailedDest"
+					"Ref": "topicRestoreFailed"
 				}],
 				"Dimensions": [{
 					"Name": "StateMachineArn",
 					"Value": {
 						"Ref": "statemachineCopySnapshotsDestRDS"
-					}
-				}]
-			}
-		},
-		"alarmcwDeleteOldFailedDest": {
-			"Type": "AWS::CloudWatch::Alarm",
-			"Condition": "DeleteOld",
-			"Properties": {
-				"ActionsEnabled": "true",
-				"ComparisonOperator": "GreaterThanOrEqualToThreshold",
-				"EvaluationPeriods": "2",
-				"MetricName": "ExecutionsFailed",
-				"Namespace": "AWS/States",
-				"Period": "3600",
-				"Statistic": "Sum",
-				"Threshold": "2.0",
-				"AlarmActions": [{
-					"Ref": "topicDeleteOldFailedDest"
-				}],
-				"Dimensions": [{
-					"Name": "StateMachineArn",
-					"Value": {
-						"Ref": "statemachineDeleteOldSnapshotsDestRDS"
 					}
 				}]
 			}
@@ -322,7 +271,7 @@
 							"Ref": "CodeBucket"
 						}]
 					},
-					"S3Key": { "Fn::If" : [ "CrossAccount", "copy_snapshots_dest_rds.zip", "copy_snapshots_no_x_account_rds.zip" ]}
+					"S3Key": "restore_snapshots_rds.zip"
 				},
 				"MemorySize" : 512,
 				"Description": "This functions copies snapshots for RDS Instances shared with this account. It checks for existing snapshots following the pattern specified in the environment variables with the following format: <dbInstanceIdentifier-identifier>-YYYY-MM-DD-HH-MM",
@@ -331,62 +280,20 @@
 						"SNAPSHOT_PATTERN": {
 							"Ref": "SnapshotPattern"
 						},
-						"DEST_REGION": {
-							"Ref": "DestinationRegion"
-						},
-						"LOG_LEVEL": {
-							"Ref": "LogLevel"
+						"SNAPSHOT_TYPE": {
+							"Ref": "SnapshotType"
 						},
 						"REGION_OVERRIDE": {
 							"Ref": "SourceRegionOverride"
 						},
-						"KMS_KEY_DEST_REGION": {
-							"Ref": "KmsKeyDestination"
+						"DB_PATTERN": {
+							"Ref": "DatabasePattern"
 						},
-						"KMS_KEY_SOURCE_REGION": {
-							"Ref": "KmsKeySource"
+						"SNAPSHOT_DB_MAP": {
+							"Ref": "SnapshotDbMap"
 						},
-						"RETENTION_DAYS": {
-							"Ref": "RetentionDays"
-						}
-					}
-				},
-				"Role": {
-					"Fn::GetAtt": ["iamroleSnapshotsRDS", "Arn"]
-				},
-				"Runtime": "python3.7",
-				"Handler": "lambda_function.lambda_handler",
-				"Timeout": 300
-			}
-		},
-		"lambdaDeleteOldDestRDS": {
-			"Type": "AWS::Lambda::Function",
-			"Condition": "DeleteOld",
-			"Properties": {
-				"Code": {
-					"S3Bucket": {
-						"Fn::If": ["DefaultBucket", {
-							"Fn::FindInMap": ["Buckets", {
-								"Ref": "AWS::Region"
-							}, "Bucket"]
-						}, {
-							"Ref": "CodeBucket"
-						}]
-					},
-					"S3Key": {"Fn::If" : [ "CrossAccount", "delete_old_snapshots_dest_rds.zip", "delete_old_snapshots_no_x_account_rds.zip" ]}
-				},
-				"MemorySize" : 512,
-				"Description": "This function enforces retention on the snapshots shared with the destination account. ",
-				"Environment": {
-					"Variables": {
-						"SNAPSHOT_PATTERN": {
-							"Ref": "SnapshotPattern"
-						},
-						"DEST_REGION": {
-							"Ref": "DestinationRegion"
-						},
-						"RETENTION_DAYS": {
-							"Ref": "RetentionDays"
+						"RESTORE_ARGS": {
+							"Ref": "RestoreArgs"
 						},
 						"LOG_LEVEL": {
 							"Ref": "LogLevel"
@@ -394,7 +301,8 @@
 					}
 				},
 				"Role": {
-					"Fn::GetAtt": ["iamroleSnapshotsRDS", "Arn"]
+					"Fn::GetAtt": [
+						"iamroleRestoreSnapshotsRDS", "Arn"]
 				},
 				"Runtime": "python3.7",
 				"Handler": "lambda_function.lambda_handler",
@@ -433,7 +341,7 @@
 				}]
 			}
 		},
-		"statemachineRestoreSnapshotsRDS": {
+		"statemachineCopySnapshotsDestRDS": {
 			"Type": "AWS::StepFunctions::StateMachine",
 			"Properties": {
 				"DefinitionString": {
@@ -449,7 +357,8 @@
 						},
 						"\"",
 						{
-							"Fn::GetAtt": ["lambdaCopySnapshotsRDS", "Arn"]
+							"Fn::GetAtt": [
+								"lambdaRestoreSnapshotsRDS", "Arn"]
 						}, "\"\n,",
 						{
 							"Fn::Join": ["\n", [
@@ -469,56 +378,6 @@
 								"         \"MaxAttempts\": 20,",
 								"         \"BackoffRate\": 1",
 								"     }",
-								"    ],",
-								"    \"End\": true ",
-								"   }",
-								" }}"
-							]]
-						}
-					]]
-				},
-				"RoleArn": {
-					"Fn::GetAtt": ["iamroleStateExecution", "Arn"]
-				}
-			}
-		},
-		"statemachineDeleteOldSnapshotsDestRDS": {
-			"Type": "AWS::StepFunctions::StateMachine",
-			"Condition": "DeleteOld",
-			"Properties": {
-				"DefinitionString": {
-					"Fn::Join": ["", [{
-							"Fn::Join": ["\n", [
-								" {\"Comment\":\"DeleteOld for RDS snapshots in destination region\",",
-								" \"StartAt\":\"DeleteOldDestRegion\",",
-								" \"States\":{",
-								"   \"DeleteOldDestRegion\":{",
-								"     \"Type\":\"Task\",",
-								"     \"Resource\": "
-							]]
-						},
-						"\"",
-						{
-							"Fn::GetAtt": ["lambdaDeleteOldDestRDS", "Arn"]
-						}, "\"\n,",
-						{
-							"Fn::Join": ["\n", [
-								"     \"Retry\":[",
-								"       {",
-								"       \"ErrorEquals\":[ ",
-								"         \"SnapshotToolException\"",
-								"       ],",
-								"       \"IntervalSeconds\":600,",
-								"       \"MaxAttempts\":5,",
-								"       \"BackoffRate\":1",
-								"     },",
-								"     {",
-								"      \"ErrorEquals\":[ ",
-								"         \"States.ALL\"], ",
-								"         \"IntervalSeconds\": 30,",
-								"         \"MaxAttempts\": 20,",
-								"         \"BackoffRate\": 1",
-								"    }",
 								"    ],",
 								"    \"End\": true ",
 								"   }",
@@ -579,46 +438,14 @@
 				}]
 			}
 		},
-		"cwEventDeleteOldSnapshotsRDS": {
-			"Type": "AWS::Events::Rule",
-			"Condition": "DeleteOld",
-			"Properties": {
-				"Description": "Triggers the RDS DeleteOld state machine in the destination account",
-				"ScheduleExpression": {
-					"Fn::Join": ["", ["cron(", "0 /1 * * ? *", ")"]]
-				},
-				"State": "ENABLED",
-				"Targets": [{
-					"Arn": {
-						"Ref": "statemachineDeleteOldSnapshotsDestRDS"
-					},
-					"Id": "Target1",
-					"RoleArn": {
-						"Fn::GetAtt": ["iamroleStepInvocation", "Arn"]
-					}
-				}]
-			}
-		},
-		"cwloggroupDeleteOldSnapshotsDestRDS":{
-			"Type": "AWS::Logs::LogGroup",
-			"Description": "Log group for the lambdaCopySnapshotsRDS function's logs",
-			"Condition": "DeleteOld",
-			"DependsOn": "lambdaDeleteOldDestRDS",
-			"Properties": {
-				"RetentionInDays": { "Ref": "LambdaCWLogRetention" }, 
-				"LogGroupName": { 
-					"Fn::Sub": [ "/aws/lambda/${func}", { "func": {	"Ref" : "LogGroupName" } } ]
-				}
-			}
-		},
 		"cwloggrouplambdaCopySnapshotsRDS":{
 			"Type": "AWS::Logs::LogGroup",
 			"Description": "Log group for the lambdaCopySnapshotsRDS function's logs",
-			"DependsOn": "lambdaCopySnapshotsRDS",
+			"DependsOn": "lambdaRestoreSnapshotsRDS",
 			"Properties": {
 				"RetentionInDays": { "Ref": "LambdaCWLogRetention" }, 
 				"LogGroupName": { 
-					"Fn::Sub": [ "/aws/lambda/${func}", { "func": {	"Ref" : "lambdaCopySnapshotsRDS" } } ]
+					"Fn::Sub": [ "/aws/lambda/${func}", { "func": {	"Ref" : "lambdaRestoreSnapshotsRDS"} } ]
 				}
 			}
 		}
@@ -627,19 +454,8 @@
 		"CopyFailedTopic": {
 			"Description": "Subscribe to this topic to receive alerts of failed copies",
 			"Value": {
-				"Ref": "topicCopyFailedDest"
+				"Ref": "topicRestoreFailed"
 			}
-		},
-		"DeleteOldFailedTopic": {
-			"Condition": "DeleteOld",
-			"Description": "Subscribe to this topic to receive alerts of failures at deleting old snapshots",
-			"Value": {
-				"Ref": "topicDeleteOldFailedDest"
-			}
-		},
-		"SourceURL": {
-			"Description": "For more information and documentation, see the source repository at GitHub.",
-			"Value": "https://github.com/awslabs/rds-snapshot-tool"
 		}
 	},
 	"Description": "Snapshots Tool for RDS cross-region and cross-account (destination account stack)"
