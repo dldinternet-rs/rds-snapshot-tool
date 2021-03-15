@@ -162,7 +162,7 @@
 				"Dimensions": [{
 					"Name": "StateMachineArn",
 					"Value": {
-						"Ref": "statemachineCopySnapshotsDestRDS"
+						"Ref": "statemachineRestoreSnapshotsDestRDS"
 					}
 				}]
 			}
@@ -341,16 +341,16 @@
 				}]
 			}
 		},
-		"statemachineCopySnapshotsDestRDS": {
+		"statemachineRestoreSnapshotsDestRDS": {
 			"Type": "AWS::StepFunctions::StateMachine",
 			"Properties": {
 				"DefinitionString": {
 					"Fn::Join": ["", [{
 							"Fn::Join": ["\n", [
 								" {\"Comment\":\"Copies snapshots locally and then to DEST_REGION\",",
-								" \"StartAt\":\"CopySnapshots\",",
+								" \"StartAt\":\"RestoreSnapshots\",",
 								" \"States\":{",
-								"   \"CopySnapshots\":{",
+								"   \"RestoreSnapshots\":{",
 								"     \"Type\":\"Task\",",
 								"     \"Resource\": "
 							]]
@@ -419,7 +419,7 @@
 				}]
 			}
 		},
-		"cwEventCopySnapshotsRDS": {
+		"cwEventRestoreSnapshotsRDS": {
 			"Type": "AWS::Events::Rule",
 			"Properties": {
 				"Description": "Triggers the RDS Copy state machine in the destination account",
@@ -429,7 +429,7 @@
 				"State": "ENABLED",
 				"Targets": [{
 					"Arn": {
-						"Ref": "statemachineCopySnapshotsDestRDS"
+						"Ref": "statemachineRestoreSnapshotsDestRDS"
 					},
 					"Id": "Target1",
 					"RoleArn": {
@@ -438,9 +438,9 @@
 				}]
 			}
 		},
-		"cwloggrouplambdaCopySnapshotsRDS":{
+		"cwloggrouplambdaRestoreSnapshotsRDS":{
 			"Type": "AWS::Logs::LogGroup",
-			"Description": "Log group for the lambdaCopySnapshotsRDS function's logs",
+			"Description": "Log group for the lambdaRestoreSnapshotsRDS function's logs",
 			"DependsOn": "lambdaRestoreSnapshotsRDS",
 			"Properties": {
 				"RetentionInDays": { "Ref": "LambdaCWLogRetention" }, 
