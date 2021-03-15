@@ -10,11 +10,7 @@ or in the "license" file accompanying this file. This file is distributed on an 
 
 # restore_snapshots_rds
 # This Lambda function restores snapshots within the account. These snapshots can be created, or shared and copied by other stacks in the rds-snapshot-tool family possibly in other accounts.
-import json
-from botocore.exceptions import ClientError
-from botocore.utils import ArnParser, InvalidArnException
-from snapshots_tool_utils import *
-
+import os
 if __name__ == '__main__':
     import dotenv
 
@@ -22,14 +18,18 @@ if __name__ == '__main__':
     if env_path:
         dotenv.load_dotenv(dotenv_path=env_path, override=True, verbose=True)
 
+import traceback
+import json
+from botocore.exceptions import ClientError
+from snapshots_tool_utils import *
+
 # Initialize from environment variable
 LOGLEVEL = os.getenv('LOG_LEVEL', 'WARNING').strip().upper()
 SNAPSHOT_TYPE = str(os.getenv('SNAPSHOT_TYPE', 'manual')).strip()
-RESTORE_INTERVAL = int(os.getenv('INTERVAL', '24'))
+RESTORE_INTERVAL = int(os.getenv('RESTORE_INTERVAL', 0))
 SNAPSHOT_PATTERN = os.getenv('SNAPSHOT_PATTERN', 'ALL_INSTANCES')
 DB_PATTERN = os.getenv('DB_PATTERN', 'NO_INSTANCES')
 TAGGEDINSTANCE = os.getenv('TAGGEDINSTANCE', 'FALSE')
-MAX_WAIT = int(os.getenv('MAX_WAIT', 300)) - 1
 LOAD_BALANCER = os.getenv('LOAD_BALANCER', None)
 SNAPSHOT_DB_MAP = os.getenv('SNAPSHOT_DB_MAP', '{ ".*": null }')
 try:
@@ -59,176 +59,6 @@ else:
         # 'OptionGroupName': 'string',
     }
 logger = LOGGER
-if os.getenv('REGION_OVERRIDE', 'NO') != 'NO':
-    REGION = os.getenv('REGION_OVERRIDE').strip()
-else:
-    REGION = os.getenv('AWS_DEFAULT_REGION')
-TIMESTAMP_FORMAT = '%Y-%m-%d-%H-%M'
-import socket
-
-def get_ipv4_by_hostname(hostname):
-    # see `man getent` `/ hosts `
-    # see `man getaddrinfo`
-
-    l = (
-        i        # raw socket structure
-        [4]  # internet protocol info
-        [0]  # address
-        for i in
-        socket.getaddrinfo(
-            hostname,
-            0  # port, required
-        )
-        if i[0] is socket.AddressFamily.AF_INET  # ipv4
-
-        # ignore duplicate addresses with other socket types
-        and i[1] in {socket.SocketKind.SOCK_RAW,socket.SocketKind.SOCK_STREAM,}
-    )
-    return list(l)
-
-
-def check_on_db_instance(db_identifier):
-    client = boto3.client('rds', region_name=REGION)
-    response = client.describe_db_instances(
-        Filters=[
-            {
-                'Name': 'db-instance-id',
-                'Values': [db_identifier]
-            },
-        ]
-    )
-    if response['DBInstances']:
-        db_inst = response['DBInstances'][0]
-        state = db_inst['DBInstanceStatus']
-        if state != 'available':
-            logger.info(f"{db_identifier} in {state}, not available for modification, waiting")
-            waiter = client.get_waiter('db_instance_available')
-            max_att = int(MAX_WAIT / 5)
-            waiter.wait(
-                DBInstanceIdentifier=db_identifier,
-                WaiterConfig={'Delay': 5, 'MaxAttempts': max_att}
-            )
-    else:
-        msg = '{} restore not started?'.format(db_identifier)
-        logger.error(msg)
-        raise Exception(msg)
-    return db_inst
-
-
-def switch_load_balancer(lb, ss, db):
-    elbv2 = boto3.client('elbv2', region_name=REGION)
-    try:
-        try:
-            parts = ArnParser().parse_arn(lb)
-            elb = parts['resource']
-            response = elbv2.describe_load_balancers(
-                LoadBalancerArns=[
-                   lb,
-                ],
-            )
-        except InvalidArnException:
-            response = elbv2.describe_load_balancers(
-                # LoadBalancerArns=[
-                #    LOAD_BALANCER,
-                # ],
-                Names=[
-                    lb,
-                ],
-            )
-        if response['LoadBalancers']:
-            ilb = response['LoadBalancers'][0]
-            logger.info(ilb)
-            lba = ilb['LoadBalancerArn']
-            response = elbv2.describe_listeners(
-                LoadBalancerArn=lba,
-            )
-            if response['Listeners']:
-                listeners = [ l for l in response['Listeners'] if l['Port'] == ss['Port']]
-                logger.info(listeners)
-                if listeners:
-                    for lsn in listeners:
-                        for act in lsn['DefaultActions']:
-                            if act['Type'] == 'forward':
-                                tga = act['TargetGroupArn']
-                                response = elbv2.describe_target_groups(
-                                    # LoadBalancerArn=lba,
-                                    TargetGroupArns=[
-                                        tga,
-                                    ],
-                                )
-                                if response['TargetGroups']:
-                                    tg = response['TargetGroups'][0]
-                                    logger.info(tg)
-                                    response = elbv2.describe_target_health(
-                                        TargetGroupArn=tga,
-                                    )
-                                    if response['TargetHealthDescriptions']:
-                                        thds = response['TargetHealthDescriptions']
-                                        ips = set(get_ipv4_by_hostname(db['Endpoint']['Address']))
-                                        tis = set([
-                                            t['Target']['Id']
-                                            for t in thds
-                                            if t['TargetHealth']['State'] not in {'draining'}])
-                                        if len(ips & tis) != len(ips):
-                                            for thd in thds:
-                                                tgt = thd['Target']
-                                                logger.info(tgt)
-                                                response = elbv2.deregister_targets(
-                                                    TargetGroupArn=tga,
-                                                    Targets=[
-                                                        {
-                                                            'Id': tgt['Id'],
-                                                            # 'Port': 123,
-                                                            # 'AvailabilityZone': 'string'
-                                                        },
-                                                    ]
-                                                )
-                                            for ip in ips:
-                                                response = elbv2.register_targets(
-                                                    TargetGroupArn=tga,
-                                                    Targets=[
-                                                        {
-                                                            'Id': ip,
-                                                            'Port': db['Endpoint']['Port'],
-                                                            'AvailabilityZone': db['AvailabilityZone']
-                                                        },
-                                                    ]
-                                                )
-    except ClientError as ce:
-        logger.error(ce)
-
-
-def delete_old_db(db_identifier):
-    client = boto3.client('rds', region_name=REGION)
-    response = client.describe_db_instances(
-        Filters=[
-            {
-                'Name': 'db-instance-id',
-                'Values': [db_identifier]
-            },
-        ]
-    )
-    if response['DBInstances']:
-        db_inst = response['DBInstances'][0]
-        state = db_inst['DBInstanceStatus']
-        if state not in {'available', 'deleting'}:
-            raise Exception('This database is not available: {}'.format(db_identifier))
-        if state in {'available'}:
-            response = client.delete_db_instance(
-                DBInstanceIdentifier=db_identifier,
-                SkipFinalSnapshot=True,
-                # FinalDBSnapshotIdentifier='string',
-                DeleteAutomatedBackups=True
-            )
-            if response['DBInstance']:
-               logger.warning(f"Deleting {response['DBInstance']['DBInstanceIdentifier']}")
-        else:
-            logger.info(f'{db_identifier} is {state}')
-    else:
-        msg = '{} old DB not found?!'.format(db_identifier)
-        logger.error(msg)
-        raise Exception(msg)
-    return True
 
 
 def lambda_handler(event, context):
@@ -306,43 +136,54 @@ def lambda_handler(event, context):
                         # 1. Do we have any restores already in flight for this DB? If so bypass
                         db_inst = check_on_db_instance(db_identifier)
                         if not db_inst:
-                            # 2. Restore the snapshot to a new DB with a snapshot derived name (or specified?)
-                            try:
-                                timestamp_format = now.strftime(TIMESTAMP_FORMAT)
+                            fresh_inst = None
+                            for inst in filtered_instances:
+                                inst_create_time = inst['InstanceCreateTime'].replace(tzinfo=None)
+                                freshness_window = datetime.utcnow().replace(tzinfo=None)
+                                if RESTORE_INTERVAL:
+                                    freshness_window -= timedelta(hours=RESTORE_INTERVAL)
+                                if RESTORE_INTERVAL and inst_create_time > freshness_window:
+                                    fresh_inst = inst
+                                    db_inst = inst if not db_inst else db_inst
+                            if not fresh_inst:
+                                # 2. Restore the snapshot to a new DB with a snapshot derived name (or specified?)
                                 try:
-                                    restore_args = {
-                                        **RESTORE_ARGS,
-                                        **{
-                                            'LicenseModel': ss['LicenseModel'],
-                                            'Engine': ss['Engine'],
-                                            'Port': ss['Port'],
+                                    timestamp_format = now.strftime(TIMESTAMP_FORMAT)
+                                    try:
+                                        restore_args = {
+                                            **RESTORE_ARGS,
+                                            **{
+                                                'LicenseModel': ss['LicenseModel'],
+                                                'Engine': ss['Engine'],
+                                                'Port': ss['Port'],
+                                            }
                                         }
-                                    }
-                                    logger.info(json.dumps(restore_args))
-                                    response = client.restore_db_instance_from_db_snapshot(
-                                        DBSnapshotIdentifier=snapshot_identifier(ssid),
-                                        DBInstanceIdentifier=db_identifier,
-                                        Tags=[
-                                            {'Key': 'CreatedBy', 'Value': 'Snapshot Tool for RDS'},
-                                            {'Key': 'CreatedOn', 'Value': timestamp_format},
-                                        ],
-                                        **restore_args
-                                    )
-                                    logger.info(json.dumps(response))
-                                except botocore.exceptions.ClientError as ce:
-                                    logger.error(e)
-                                    raise ce
-                                db_inst = check_on_db_instance(db_identifier)
-                            except Exception as e:
-                                pending_restores += 1
-                                logger.info('Could not create snapshot %s (%s)' % (snapshot_identifier, e))
+                                        logger.info(json.dumps(restore_args))
+                                        response = client.restore_db_instance_from_db_snapshot(
+                                            DBSnapshotIdentifier=snapshot_identifier(ssid),
+                                            DBInstanceIdentifier=db_identifier,
+                                            Tags=[
+                                                {'Key': 'CreatedBy', 'Value': 'Snapshot Tool for RDS'},
+                                                {'Key': 'CreatedOn', 'Value': timestamp_format},
+                                            ],
+                                            **restore_args
+                                        )
+                                        logger.info(json.dumps(response))
+                                    except botocore.exceptions.ClientError as ce:
+                                        logger.error(ce)
+                                        raise ce
+                                    db_inst = check_on_db_instance(db_identifier)
+                                except Exception as e:
+                                    LOGGER.info(traceback.format_tb(e.__traceback__))
+                                    logger.error('Could not restore snapshot %s (%s)' % (snapshot_identifier, e))
+                                    pending_restores += 1
                         if db_inst:
                             try:
                                 # 4. If the restore of the snapshot is complete then potentially switch the ILB
                                 if LOAD_BALANCER:
                                     switch_load_balancer(LOAD_BALANCER, ss, db_inst)
                                 # 5. Now kill the old DB
-                                if dbs['old']:
+                                if dbs['old'] and not (db_inst and dbs['old'] == db_inst['DBInstanceIdentifier']):
                                     delete_old_db(dbs['old'])
                             # 3. If the snapshot restore does not complete in a reasonable time (waiter.Wait) then give up and finish next time
                             except ClientError as ce:

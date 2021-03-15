@@ -17,10 +17,12 @@ from datetime import datetime, timedelta
 import os
 import logging
 import re
-
+import socket
+import botocore
+from botocore.utils import ArnParser, InvalidArnException
+from botocore.exceptions import ClientError
 
 # Initialize everything
-import botocore
 
 _LOGLEVEL = os.getenv('LOG_LEVEL', 'ERROR').strip()
 
@@ -39,6 +41,33 @@ else:
     _REGION = os.getenv('AWS_DEFAULT_REGION')
 
 _SUPPORTED_ENGINES = [ 'mariadb', 'sqlserver-se', 'sqlserver-ee', 'sqlserver-ex', 'sqlserver-web', 'mysql', 'oracle-se', 'oracle-se1', 'oracle-se2', 'oracle-ee', 'postgres' ]
+
+MAX_WAIT = int(os.getenv('MAX_WAIT', 300)) - 1
+TIMESTAMP_FORMAT = '%Y-%m-%d-%H-%M'
+if os.getenv('REGION_OVERRIDE', 'NO') != 'NO':
+    REGION = os.getenv('REGION_OVERRIDE').strip()
+else:
+    REGION = os.getenv('AWS_DEFAULT_REGION')
+
+def get_ipv4_by_hostname(hostname):
+    # see `man getent` `/ hosts `
+    # see `man getaddrinfo`
+
+    l = (
+        i        # raw socket structure
+        [4]  # internet protocol info
+        [0]  # address
+        for i in
+        socket.getaddrinfo(
+            hostname,
+            0  # port, required
+        )
+        if i[0] is socket.AddressFamily.AF_INET  # ipv4
+
+           # ignore duplicate addresses with other socket types
+           and i[1] in {socket.SocketKind.SOCK_RAW,socket.SocketKind.SOCK_STREAM,}
+    )
+    return list(l)
 
 
 def logger_set_formatter(logger=None):
@@ -455,3 +484,148 @@ def snapshot_identifier(snapshot):
         id = parts['resource'].split(':')[-1]
 
     return id
+
+
+def check_on_db_instance(db_identifier, max_wait=MAX_WAIT, region=REGION):
+    client = boto3.client('rds', region_name=region)
+    response = client.describe_db_instances(
+        Filters=[
+            {
+                'Name': 'db-instance-id',
+                'Values': [db_identifier]
+            },
+        ]
+    )
+    if response['DBInstances']:
+        db_inst = response['DBInstances'][0]
+        state = db_inst['DBInstanceStatus']
+        if state != 'available':
+            logger.info(f"{db_identifier} in {state}, not available for modification, waiting")
+            waiter = client.get_waiter('db_instance_available')
+            max_att = int(max_wait / 5)
+            waiter.wait(
+                DBInstanceIdentifier=db_identifier,
+                WaiterConfig={'Delay': 5, 'MaxAttempts': max_att}
+            )
+    else:
+        msg = '{} restore not started?'.format(db_identifier)
+        logger.error(msg)
+        # raise Exception(msg)
+        return None
+    return db_inst
+
+
+def switch_load_balancer(lb, ss, db, region=REGION):
+    elbv2 = boto3.client('elbv2', region_name=region)
+    try:
+        try:
+            parts = ArnParser().parse_arn(lb)
+            elb = parts['resource']
+            response = elbv2.describe_load_balancers(
+                LoadBalancerArns=[
+                    lb,
+                ],
+            )
+        except InvalidArnException:
+            response = elbv2.describe_load_balancers(
+                # LoadBalancerArns=[
+                #    LOAD_BALANCER,
+                # ],
+                Names=[
+                    lb,
+                ],
+            )
+        if response['LoadBalancers']:
+            ilb = response['LoadBalancers'][0]
+            logger.info(ilb)
+            lba = ilb['LoadBalancerArn']
+            response = elbv2.describe_listeners(
+                LoadBalancerArn=lba,
+            )
+            if response['Listeners']:
+                listeners = [ l for l in response['Listeners'] if l['Port'] == ss['Port']]
+                logger.info(listeners)
+                if listeners:
+                    for lsn in listeners:
+                        for act in lsn['DefaultActions']:
+                            if act['Type'] == 'forward':
+                                tga = act['TargetGroupArn']
+                                response = elbv2.describe_target_groups(
+                                    # LoadBalancerArn=lba,
+                                    TargetGroupArns=[
+                                        tga,
+                                    ],
+                                )
+                                if response['TargetGroups']:
+                                    tg = response['TargetGroups'][0]
+                                    logger.info(tg)
+                                    response = elbv2.describe_target_health(
+                                        TargetGroupArn=tga,
+                                    )
+                                    if response['TargetHealthDescriptions']:
+                                        thds = response['TargetHealthDescriptions']
+                                        ips = set(get_ipv4_by_hostname(db['Endpoint']['Address']))
+                                        tis = set([
+                                            t['Target']['Id']
+                                            for t in thds
+                                            if t['TargetHealth']['State'] not in {'draining'}])
+                                        if len(ips & tis) != len(ips):
+                                            for thd in thds:
+                                                tgt = thd['Target']
+                                                logger.info(tgt)
+                                                response = elbv2.deregister_targets(
+                                                    TargetGroupArn=tga,
+                                                    Targets=[
+                                                        {
+                                                            'Id': tgt['Id'],
+                                                            # 'Port': 123,
+                                                            # 'AvailabilityZone': 'string'
+                                                        },
+                                                    ]
+                                                )
+                                            for ip in ips:
+                                                response = elbv2.register_targets(
+                                                    TargetGroupArn=tga,
+                                                    Targets=[
+                                                        {
+                                                            'Id': ip,
+                                                            'Port': db['Endpoint']['Port'],
+                                                            'AvailabilityZone': db['AvailabilityZone']
+                                                        },
+                                                    ]
+                                                )
+    except ClientError as ce:
+        logger.error(ce)
+
+
+def delete_old_db(db_identifier, region=REGION):
+    client = boto3.client('rds', region_name=region)
+    response = client.describe_db_instances(
+        Filters=[
+            {
+                'Name': 'db-instance-id',
+                'Values': [db_identifier]
+            },
+        ]
+    )
+    if response['DBInstances']:
+        db_inst = response['DBInstances'][0]
+        state = db_inst['DBInstanceStatus']
+        if state not in {'available', 'deleting'}:
+            raise Exception('This database is not available: {}'.format(db_identifier))
+        if state in {'available'}:
+            response = client.delete_db_instance(
+                DBInstanceIdentifier=db_identifier,
+                SkipFinalSnapshot=True,
+                # FinalDBSnapshotIdentifier='string',
+                DeleteAutomatedBackups=True
+            )
+            if response['DBInstance']:
+                logger.warning(f"Deleting {response['DBInstance']['DBInstanceIdentifier']}")
+        else:
+            logger.info(f'{db_identifier} is {state}')
+    else:
+        msg = '{} old DB not found?!'.format(db_identifier)
+        logger.error(msg)
+        raise Exception(msg)
+    return True
