@@ -212,16 +212,19 @@ def delete_old_db(db_identifier):
     if response['DBInstances']:
         db_inst = response['DBInstances'][0]
         state = db_inst['DBInstanceStatus']
-        if state != 'available':
+        if state not in {'available', 'deleting'}:
             raise Exception('This database is not available: {}'.format(db_identifier))
-        response = client.delete_db_instance(
-            DBInstanceIdentifier=db_identifier,
-            SkipFinalSnapshot=True,
-            # FinalDBSnapshotIdentifier='string',
-            DeleteAutomatedBackups=True
-        )
-        if response['DBInstance']:
-           logger.warning(json.dumps(response['DBInstance']))
+        if state in {'available'}:
+            response = client.delete_db_instance(
+                DBInstanceIdentifier=db_identifier,
+                SkipFinalSnapshot=True,
+                # FinalDBSnapshotIdentifier='string',
+                DeleteAutomatedBackups=True
+            )
+            if response['DBInstance']:
+               logger.warning(f"Deleting {response['DBInstance']['DBInstanceIdentifier']}")
+        else:
+            logger.info(f'{db_identifier} is {state}')
     else:
         msg = '{} old DB not found?!'.format(db_identifier)
         logger.error(msg)
@@ -264,17 +267,21 @@ def lambda_handler(event, context):
                     dbid = instance.get('DBInstanceIdentifier')
                     if dbid and dbre and not re.search(dbre, dbid):
                         dbid = None
+                    onl = [ on for on in snapshot_map[ssid] if on['new'] == ss_id]
                     if dbid == ss_id:
-                        # Found a db for this snapshot!
-                        snapshot_map[ssid].append({
-                            'old': dbid,
-                            'new': ss_id
-                        })
+                        # Found a db for this snapshot! "Update" (NOP if ss_id already restored)
+                        if not any(onl):
+                            snapshot_map[ssid].append({
+                                'old': None,
+                                'new': ss_id
+                            })
                     else:
-                        snapshot_map[ssid].append({
-                            'old': dbid,
-                            'new': None
-                        })
+                        # Replace (If dbid is None then Create)
+                        if not any(onl):
+                            snapshot_map[ssid].append({
+                                'old': dbid,
+                                'new': ss_id
+                            })
     logger.info(json.dumps(snapshot_map))
     # With this set of snapshots, old and new DB's we can go to work
     if snapshot_map:
@@ -283,7 +290,7 @@ def lambda_handler(event, context):
             for dbs in dbsl:
                 if dbs['new']:
                     db_identifier = dbs['new']
-                    # 1. Do we have any restores already in flight for this DB? If so bypass
+                    # Are we working with the existing instance?
                     if dbs['old'] == dbs['new']:
                         try:
                             db_inst = check_on_db_instance(db_identifier)
@@ -297,50 +304,54 @@ def lambda_handler(event, context):
                             logger.error(e)
                             pending_restores += 1
                     else:
-                        # 2. Restore the snapshot to a new DB with a snapshot derived name (or specified?)
-                        try:
-                            timestamp_format = now.strftime(TIMESTAMP_FORMAT)
+                        # 1. Do we have any restores already in flight for this DB? If so bypass
+                        db_inst = check_on_db_instance(db_identifier)
+                        if not db_inst:
+                            # 2. Restore the snapshot to a new DB with a snapshot derived name (or specified?)
                             try:
-                                restore_args = {
-                                    **RESTORE_ARGS,
-                                    **{
-                                        'LicenseModel': ss['LicenseModel'],
-                                        'Engine': ss['Engine'],
-                                        'Port': ss['Port'],
+                                timestamp_format = now.strftime(TIMESTAMP_FORMAT)
+                                try:
+                                    restore_args = {
+                                        **RESTORE_ARGS,
+                                        **{
+                                            'LicenseModel': ss['LicenseModel'],
+                                            'Engine': ss['Engine'],
+                                            'Port': ss['Port'],
+                                        }
                                     }
-                                }
-                                logger.info(json.dumps(restore_args))
-                                response = client.restore_db_instance_from_db_snapshot(
-                                    DBSnapshotIdentifier=snapshot_identifier(ssid),
-                                    DBInstanceIdentifier=db_identifier,
-                                    Tags=[
-                                        {'Key': 'CreatedBy', 'Value': 'Snapshot Tool for RDS'},
-                                        {'Key': 'CreatedOn', 'Value': timestamp_format},
-                                    ],
-                                    **restore_args
-                                )
-                                logger.info(json.dumps(response))
-                            except botocore.exceptions.ClientError as ce:
+                                    logger.info(json.dumps(restore_args))
+                                    response = client.restore_db_instance_from_db_snapshot(
+                                        DBSnapshotIdentifier=snapshot_identifier(ssid),
+                                        DBInstanceIdentifier=db_identifier,
+                                        Tags=[
+                                            {'Key': 'CreatedBy', 'Value': 'Snapshot Tool for RDS'},
+                                            {'Key': 'CreatedOn', 'Value': timestamp_format},
+                                        ],
+                                        **restore_args
+                                    )
+                                    logger.info(json.dumps(response))
+                                except botocore.exceptions.ClientError as ce:
+                                    logger.error(e)
+                                    raise ce
+                                db_inst = check_on_db_instance(db_identifier)
+                            except Exception as e:
+                                pending_restores += 1
+                                logger.info('Could not create snapshot %s (%s)' % (snapshot_identifier, e))
+                        if db_inst:
+                            try:
+                                # 4. If the restore of the snapshot is complete then potentially switch the ILB
+                                if LOAD_BALANCER:
+                                    switch_load_balancer(LOAD_BALANCER, ss, db_inst)
+                                # 5. Now kill the old DB
+                                if dbs['old']:
+                                    delete_old_db(dbs['old'])
+                            # 3. If the snapshot restore does not complete in a reasonable time (waiter.Wait) then give up and finish next time
+                            except ClientError as ce:
+                                logger.error(ce)
+                                pending_restores += 1
+                            except Exception as e:
                                 logger.error(e)
-                                raise ce
-                        except Exception as e:
-                            pending_restores += 1
-                            logger.info('Could not create snapshot %s (%s)' % (snapshot_identifier, e))
-
-                        try:
-                            db_inst = check_on_db_instance(db_identifier)
-                            # 4. If the restore of the snapshot is complete then potentially switch the ILB
-                            if LOAD_BALANCER:
-                                switch_load_balancer(LOAD_BALANCER, ss, db_inst)
-                            # 5. Now kill the old DB
-                            delete_old_db(dbs['old'])
-                        # 3. If the snapshot restore does not complete in a reasonable time (waiter.Wait) then give up and finish next time
-                        except ClientError as ce:
-                            logger.error(ce)
-                            pending_restores += 1
-                        except Exception as e:
-                            logger.error(e)
-                            pending_restores += 1
+                                pending_restores += 1
                 elif dbs['old'] and dbs['new'] is None:
                     delete_old_db(dbs['old'])
 
