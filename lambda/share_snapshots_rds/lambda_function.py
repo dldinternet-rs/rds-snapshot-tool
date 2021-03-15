@@ -11,6 +11,8 @@ or in the "license" file accompanying this file. This file is distributed on an 
 # share_snapshots_rds
 # This Lambda function shares snapshots created by aurora_take_snapshot with the account set in the environment variable DEST_ACCOUNT
 # It will only share snapshots tagged with shareAndCopy and a value of YES
+import json
+
 import boto3
 from datetime import datetime
 import time
@@ -41,7 +43,9 @@ def lambda_handler(event, context):
     pending_snapshots = 0
     client = boto3.client('rds', region_name=REGION)
     response = paginate_api_call(client, 'describe_db_snapshots', 'DBSnapshots', SnapshotType='manual')
+    logger.info(json.dumps([ { k: str(v) for k,v in r.items() } for r in response['DBSnapshots']]))
     filtered = get_own_snapshots_source(PATTERN, response)
+    logger.info('Own manual snapshots: {}'.format(len(filtered)))
 
     # Search all snapshots for the correct tag
     for snapshot_identifier,snapshot_object in filtered.items():

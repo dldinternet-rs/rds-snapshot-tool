@@ -1,0 +1,5 @@
+# Run the hourly jobs
+SHELL=/bin/bash
+PATH=/usr/local/pyenv/plugins/pyenv-virtualenv/shims:/usr/local/pyenv/shims:/usr/local/pyenv/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/ec2-user/.local/bin:/home/ec2-user/bin
+MAILTO=christo.delange@roadsync.com
+*/2 * * * * /bin/bash /home/ec2-user/cron/create-views.sh

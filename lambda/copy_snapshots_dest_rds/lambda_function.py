@@ -20,6 +20,12 @@ import logging
 import re
 from snapshots_tool_utils import *
 
+if __name__ == '__main__':
+    import dotenv
+    env_path = os.getenv('DOT_ENV', '.env')
+    if env_path:
+        dotenv.load_dotenv(dotenv_path=env_path, override=True, verbose=True)
+
 # Initialize everything
 LOGLEVEL = os.getenv('LOG_LEVEL', 'ERROR').strip()
 PATTERN = os.getenv('SNAPSHOT_PATTERN', 'ALL_SNAPSHOTS')
@@ -43,12 +49,15 @@ def lambda_handler(event, context):
     response = paginate_api_call(client, 'describe_db_snapshots', 'DBSnapshots', IncludeShared=True)
 
     shared_snapshots = get_shared_snapshots(PATTERN, response)
+    logger.info('Shared snapshots: {}'.format(len(shared_snapshots)))
     own_snapshots = get_own_snapshots_dest(PATTERN, response)
+    logger.info('Own snapshots: {}'.format(len(own_snapshots)))
 
     # Get list of snapshots in DEST_REGION
     client_dest = boto3.client('rds', region_name=DESTINATION_REGION)
     response_dest = paginate_api_call(client_dest, 'describe_db_snapshots', 'DBSnapshots')
     own_dest_snapshots = get_own_snapshots_dest(PATTERN, response_dest)
+    logger.info('Destination snapshots: {} ({})'.format(len(own_dest_snapshots), DESTINATION_REGION))
 
     for shared_identifier, shared_attributes in shared_snapshots.items():
 

@@ -1,0 +1,6 @@
+boto3
+invoke
+invocations
+requests
+python-dotenv
+postgres
