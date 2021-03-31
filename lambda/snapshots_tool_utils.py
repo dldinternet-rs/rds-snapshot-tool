@@ -509,7 +509,7 @@ def check_on_db_instance(db_identifier, max_wait=MAX_WAIT, region=REGION):
             )
     else:
         msg = '{} restore not started?'.format(db_identifier)
-        logger.error(msg)
+        logger.info(msg)
         # raise Exception(msg)
         return None
     return db_inst
