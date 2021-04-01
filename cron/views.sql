@@ -98,3 +98,53 @@ from card_charges
 where payment_error = 0 and deleted_at is null and (decline_reason is null or decline_reason = '')
   and payment_stage in (2,7,8)
 order by id desc;
+
+-- HQ, Company & Locations
+CREATE OR REPLACE VIEW HQ_COMPANY_LOC
+AS
+select
+       case
+           when c.parent_company_id in (5, 1079,1330,1080,1336) then 'FHI'
+           when c.parent_company_id in (211, 173, 284) then 'Lineage'
+           when c.parent_company_id in (59, 14, 57, 58, 60) then 'PFS'
+           -- when c.parent_company_id in (5049) then cast(c.parent_company_id AS TEXT) -- Quirch
+           when c.parent_company_id in (438, 190, 482, 218, 191, 263, 2460) then 'USCS'
+           else cast(c.parent_company_id AS TEXT)
+       end hq_id,
+       case
+           when c.parent_company_id in (5, 1079,1330,1080,1336) then 'FHI'
+           when c.parent_company_id in (211, 173, 284) then 'Lineage'
+           when c.parent_company_id in (59, 14, 57, 58, 60) then 'Preferred Freezer Services'
+           -- when c.parent_company_id in (5049) then p.name -- Quirch
+           when c.parent_company_id in (438, 190, 482, 218, 191, 263, 2460) then 'US Cold Storage'
+           else p.name
+       end hq_name,
+       c.parent_company_id company_id,
+       p.name company_name,
+       concat('c_', c.id) location_id,
+       c.name location_name
+from companies c
+join companies p on c.parent_company_id = p.id
+
+union -- Quirch (breaks the pattern)
+select cast(c.parent_company_id AS TEXT) as hq_id,
+       p.name aS hq_name,
+       c.id company_id,
+       c.name company_name,
+       concat('l_', l.id) location_id,
+       l.name location_name
+from companies c
+join companies p on c.parent_company_id = p.id
+join locations l on c.id = l.company_id
+where c.parent_company_id in (5049)
+
+union -- Does not have a parent
+select cast( c.id AS TEXT) as hq_id,
+       c.name aS hq_name,
+       c.id company_id,
+       c.name company_name,
+       concat('l_', l.id) location_id,
+       l.name location_name
+from companies c
+join locations l on c.id = l.company_id
+where c.parent_company_id is null;
