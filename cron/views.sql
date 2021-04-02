@@ -100,7 +100,7 @@ where payment_error = 0 and deleted_at is null and (decline_reason is null or de
 order by id desc;
 
 -- HQ, Company & Locations
-CREATE OR REPLACE VIEW HQ_COMPANY_LOC
+CREATE OR REPLACE VIEW V_HQ_COMPANY_LOC
 AS
 select
        case
@@ -119,12 +119,15 @@ select
            when c.parent_company_id in (438, 190, 482, 218, 191, 263, 2460) then 'US Cold Storage'
            else p.name
        end hq_name,
+--        'FHI' as hq_id,
+--        'FHI' aS hq_name,
        c.parent_company_id company_id,
        p.name company_name,
        concat('c_', c.id) location_id,
        c.name location_name
 from companies c
 join companies p on c.parent_company_id = p.id
+where c.parent_company_id <> 5049
 
 union -- Quirch (breaks the pattern)
 select cast(c.parent_company_id AS TEXT) as hq_id,
@@ -138,7 +141,7 @@ join companies p on c.parent_company_id = p.id
 join locations l on c.id = l.company_id
 where c.parent_company_id in (5049)
 
-union -- Does not have a parent
+union -- Does not have a parent and isn't itself a parent.
 select cast( c.id AS TEXT) as hq_id,
        c.name aS hq_name,
        c.id company_id,
@@ -146,5 +149,7 @@ select cast( c.id AS TEXT) as hq_id,
        concat('l_', l.id) location_id,
        l.name location_name
 from companies c
+left join companies child on child.parent_company_id = c.id
 join locations l on c.id = l.company_id
-where c.parent_company_id is null;
+where c.parent_company_id is null
+and child.parent_company_id is null;
