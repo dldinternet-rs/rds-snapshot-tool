@@ -92,25 +92,31 @@ def lambda_handler(event, context):
             snapshot_map[ssid] = snapshot_map.get(ssid, [])
             if re.search(ssre, ss_id):
                 dbid = None
-                for instance in filtered_instances:
-                    dbid = instance.get('DBInstanceIdentifier')
-                    if dbid and dbre and not re.search(dbre, dbid):
-                        dbid = None
-                    onl = [ on for on in snapshot_map[ssid] if on['new'] == ss_id]
-                    if dbid == ss_id:
-                        # Found a db for this snapshot! "Update" (NOP if ss_id already restored)
-                        if not any(onl):
-                            snapshot_map[ssid].append({
-                                'old': None,
-                                'new': ss_id
-                            })
-                    else:
-                        # Replace (If dbid is None then Create)
-                        if not any(onl):
-                            snapshot_map[ssid].append({
-                                'old': dbid,
-                                'new': ss_id
-                            })
+                if not filtered_instances:
+                    snapshot_map[ssid].append({
+                        'old': None,
+                        'new': ss_id
+                    })
+                else:
+                    for instance in filtered_instances:
+                        dbid = instance.get('DBInstanceIdentifier')
+                        if dbid and dbre and not re.search(dbre, dbid):
+                            dbid = None
+                        onl = [ on for on in snapshot_map[ssid] if on['new'] == ss_id]
+                        if dbid == ss_id:
+                            # Found a db for this snapshot! "Update" (NOP if ss_id already restored)
+                            if not any(onl):
+                                snapshot_map[ssid].append({
+                                    'old': None,
+                                    'new': ss_id
+                                })
+                        else:
+                            # Replace (If dbid is None then Create)
+                            if not any(onl):
+                                snapshot_map[ssid].append({
+                                    'old': dbid,
+                                    'new': ss_id
+                                })
     logger.info(json.dumps(snapshot_map))
     # With this set of snapshots, old and new DB's we can go to work
     if snapshot_map:

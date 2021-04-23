@@ -46,6 +46,8 @@ def lambda_handler(event, context):
     logger.info(json.dumps([ { k: str(v) for k,v in r.items() } for r in response['DBSnapshots']]))
     filtered = get_own_snapshots_source(PATTERN, response)
     logger.info('Own manual snapshots: {}'.format(len(filtered)))
+    logger.info(json.dumps(list(filtered.keys())))
+    logger.info(json.dumps([ { k: str(v) for k,v in sso.items() } for ssi,sso in filtered.items()]))
 
     # Search all snapshots for the correct tag
     for snapshot_identifier,snapshot_object in filtered.items():
@@ -55,6 +57,7 @@ def lambda_handler(event, context):
 
         if snapshot_object['Status'].lower() == 'available' and search_tag_shared(response_tags):
             try:
+                logger.info(f'Sharing {snapshot_identifier} with {DEST_ACCOUNTIDS}')
                 # Share snapshot with dest_account
                 response_modify = client.modify_db_snapshot_attribute(
                     DBSnapshotIdentifier=snapshot_identifier,
@@ -64,6 +67,9 @@ def lambda_handler(event, context):
             except Exception as e:
                 logger.error('Exception sharing %s (%s)' % (snapshot_identifier, e))
                 pending_snapshots += 1
+        else:
+            logger.info(f'{snapshot_identifier} NOT shared')
+            logger.info(json.dumps({ k: str(v) for k,v in snapshot_object.items() }))
 
     if pending_snapshots > 0:
         log_message = 'Could not share all snapshots. Pending: %s' % pending_snapshots
