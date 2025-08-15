@@ -1,12 +1,12 @@
 #!bash
 
+export PYENV_ROOT=/usr/local/pyenv
 if test ! -d /usr/local/pyenv ; then
   test 'root' == "$(whoami)" || { echo "Must be root for the first part"; exit 1; }
   yum -y update
   yum -y upgrade
   yum install -y postgresql bind-utils nmap git
   yum install -y @development zlib-devel bzip2 bzip2-devel readline-devel sqlite sqlite-devel openssl-devel xz xz-devel libffi-devel findutils
-  export PYENV_ROOT=/usr/local/pyenv
   curl -L https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
   cd /usr/local/pyenv/
   export PYENV_ROOT=/usr/local/pyenv
@@ -17,6 +17,7 @@ if test ! -d /usr/local/pyenv ; then
   usermod -G wheel ec2-user
   echo "Exit session / reload the shell and run $0 again as ec2-user"
 else
+  export PYENV_ROOT=/usr/local/pyenv
   export PATH=$PATH:/usr/local/pyenv/bin
   eval "$(pyenv init -)"
   eval "$(pyenv virtualenv-init -)"

@@ -89,40 +89,40 @@
   "Mappings": {
     "Buckets": {
       "us-east-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-us-east-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-us-east-1"
       },
       "us-west-2": {
-        "Bucket": "roadsync-rds-snapshot-tool-us-west-2"
+        "Bucket": "dldinternet-rds-snapshot-tool-us-west-2"
       },
       "us-east-2": {
-        "Bucket": "roadsync-rds-snapshot-tool-us-east-2"
+        "Bucket": "dldinternet-rds-snapshot-tool-us-east-2"
       },
       "ap-southeast-2": {
-        "Bucket": "roadsync-rds-snapshot-tool-ap-southeast-2"
+        "Bucket": "dldinternet-rds-snapshot-tool-ap-southeast-2"
       },
       "ap-northeast-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-ap-northeast-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-ap-northeast-1"
       },
       "eu-west-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-eu-west-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-eu-west-1"
       },
       "eu-central-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-eu-central-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-eu-central-1"
       },
       "ca-central-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-ca-central-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-ca-central-1"
       },
       "eu-west-2": {
-        "Bucket": "roadsync-rds-snapshot-tool-eu-west-2"
+        "Bucket": "dldinternet-rds-snapshot-tool-eu-west-2"
       },
       "us-west-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-us-west-1"
+        "Bucket": "dldinternet-rds-snapshot-tool-us-west-1"
       },
       "ap-northeast-2": {
-        "Bucket": "roadsync-rds-snapshot-tool-ap-northeast-2"
+        "Bucket": "dldinternet-rds-snapshot-tool-ap-northeast-2"
       },
       "ap-southeast-1": {
-        "Bucket": "roadsync-rds-snapshot-tool-ap-southeast-1-real"
+        "Bucket": "dldinternet-rds-snapshot-tool-ap-southeast-1-real"
       }
     }
   },
